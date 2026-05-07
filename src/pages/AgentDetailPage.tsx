@@ -1,13 +1,16 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Square, Cpu, BookOpen, Clock } from 'lucide-react'
+import { ArrowLeft, Square, Cpu, BookOpen, Clock, Wifi, WifiOff } from 'lucide-react'
 import { useState } from 'react'
 import { useAgentStore } from '@/store/agentStore'
 import { useSystemStore } from '@/store/systemStore'
+import { useAgentDetail } from '@/hooks/useAgentDetail'
+import { useLogStream } from '@/hooks/useLogStream'
 import { AgentBadge } from '@/components/agents/AgentBadge'
 import { AgentTaskProgress } from '@/components/agents/AgentTaskProgress'
 import { AgentLogStream } from '@/components/agents/AgentLogStream'
 import { AgentToolCalls } from '@/components/agents/AgentToolCalls'
 import { Button } from '@/components/ui/Button'
+import { stopAgent } from '@/api/agents'
 import { formatUptime, formatDate } from '@/utils/formatters'
 
 type Tab = 'logs' | 'tasks' | 'tools'
@@ -18,6 +21,10 @@ export function AgentDetailPage() {
   const { agents, updateAgentStatus } = useAgentStore()
   const { logBuffers, toolCallBuffers } = useSystemStore()
   const [activeTab, setActiveTab] = useState<Tab>('logs')
+
+  // Load data from backend; falls back to store (mock data) when offline
+  useAgentDetail(id ?? '')
+  const { connected } = useLogStream(id ?? '')
 
   const agent = id ? agents[id] : undefined
 
@@ -39,6 +46,14 @@ export function AgentDetailPage() {
     { id: 'tools', label: 'Tool Calls', count: agent.toolCallCount },
   ]
 
+  const handleStop = async () => {
+    try {
+      await stopAgent(agent.id)
+    } finally {
+      updateAgentStatus(agent.id, 'stopped')
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5 animate-fade-in max-w-5xl">
       {/* Back nav */}
@@ -57,21 +72,24 @@ export function AgentDetailPage() {
             <div className="flex items-center gap-3 mb-2">
               <AgentBadge status={agent.status} />
               <span className="text-xs font-mono text-text-dim">{agent.id}</span>
+              {/* WS connection indicator */}
+              <span
+                className="ml-auto flex items-center gap-1 text-xs font-mono"
+                title={connected ? 'Live stream connected' : 'Stream disconnected — retrying'}
+              >
+                {connected
+                  ? <><Wifi size={10} className="text-green-vivid" /><span className="text-green-vivid">live</span></>
+                  : <><WifiOff size={10} className="text-text-dim" /><span className="text-text-dim">offline</span></>
+                }
+              </span>
             </div>
-            <h1 className="text-xl font-bold text-text-primary tracking-tight mb-1">
-              {agent.name}
-            </h1>
+            <h1 className="text-xl font-bold text-text-primary tracking-tight mb-1">{agent.name}</h1>
             <p className="text-sm text-text-secondary leading-relaxed">{agent.goal}</p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             {(agent.status === 'running' || agent.status === 'idle' || agent.status === 'spawning') && (
-              <Button
-                variant="danger"
-                size="sm"
-                icon={<Square size={12} />}
-                onClick={() => updateAgentStatus(agent.id, 'stopped')}
-              >
+              <Button variant="danger" size="sm" icon={<Square size={12} />} onClick={handleStop}>
                 Stop
               </Button>
             )}
@@ -82,37 +100,27 @@ export function AgentDetailPage() {
         <div className="flex items-center gap-6 mt-4 pt-4 border-t border-green-dim/20">
           <div className="flex items-center gap-1.5">
             <Clock size={12} className="text-text-dim" />
-            <span className="text-xs font-mono text-text-secondary">
-              {formatUptime(agent.uptimeSeconds)} uptime
-            </span>
+            <span className="text-xs font-mono text-text-secondary">{formatUptime(agent.uptimeSeconds)} uptime</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Cpu size={12} className="text-text-dim" />
-            <span className="text-xs font-mono text-text-secondary">
-              {agent.toolCallCount} tool calls
-            </span>
+            <span className="text-xs font-mono text-text-secondary">{agent.toolCallCount} tool calls</span>
           </div>
           <div className="flex items-center gap-1.5">
             <BookOpen size={12} className="text-text-dim" />
-            <span className="text-xs font-mono text-text-secondary">
-              {agent.memoryReads}r / {agent.memoryWrites}w memory
-            </span>
+            <span className="text-xs font-mono text-text-secondary">{agent.memoryReads}r / {agent.memoryWrites}w memory</span>
           </div>
           <div className="ml-auto">
-            <span className="text-xs font-mono text-text-dim">
-              Spawned {formatDate(agent.spawnedAt)}
-            </span>
+            <span className="text-xs font-mono text-text-dim">Spawned {formatDate(agent.spawnedAt)}</span>
           </div>
         </div>
 
-        {/* Error banner */}
         {agent.errorMessage && (
           <div className="mt-3 px-3 py-2.5 rounded bg-red-950/20 border border-red-900/40">
             <p className="text-xs font-mono text-red-400">{agent.errorMessage}</p>
           </div>
         )}
 
-        {/* Model badge */}
         <div className="mt-3 flex items-center gap-2">
           <span className="text-xs text-text-dim">Model</span>
           <span className="font-mono text-xs px-2 py-0.5 rounded border border-green-dim/40 text-green-soft bg-green-dim/10">
@@ -136,11 +144,7 @@ export function AgentDetailPage() {
             >
               {tab.label}
               {tab.count !== undefined && tab.count > 0 && (
-                <span
-                  className={`px-1.5 py-0.5 rounded font-mono text-xs ${
-                    activeTab === tab.id ? 'bg-green-dim/40 text-green-vivid' : 'bg-bg-muted text-text-dim'
-                  }`}
-                >
+                <span className={`px-1.5 py-0.5 rounded font-mono text-xs ${activeTab === tab.id ? 'bg-green-dim/40 text-green-vivid' : 'bg-bg-muted text-text-dim'}`}>
                   {tab.count}
                 </span>
               )}
@@ -148,11 +152,9 @@ export function AgentDetailPage() {
           ))}
         </div>
 
-        <div className="card-panel p-4" style={{ minHeight: '320px' }}>
+        <div className="card-panel p-4" style={{ minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
           {activeTab === 'logs' && <AgentLogStream logs={logs} />}
-          {activeTab === 'tasks' && (
-            <AgentTaskProgress steps={agent.taskSteps} currentTask={agent.currentTask} />
-          )}
+          {activeTab === 'tasks' && <AgentTaskProgress steps={agent.taskSteps} currentTask={agent.currentTask} />}
           {activeTab === 'tools' && <AgentToolCalls toolCalls={toolCalls} />}
         </div>
       </div>

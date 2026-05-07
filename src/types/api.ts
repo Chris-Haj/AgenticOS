@@ -15,10 +15,13 @@ export interface PaginatedResponse<T> {
   success: boolean
 }
 
+export type AgentRunnerType = 'claude' | 'copilot'
+
 export interface SpawnAgentPayload {
   name: string
   goal: string
   type: AgentType
+  runner?: AgentRunnerType
   model?: string
   context?: string
 }

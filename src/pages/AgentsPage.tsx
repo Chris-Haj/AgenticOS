@@ -1,26 +1,41 @@
-import { Plus, Bot } from 'lucide-react'
+import { Plus, Bot, RefreshCw, WifiOff } from 'lucide-react'
 import { useAgentStore } from '@/store/agentStore'
 import { useUiStore } from '@/store/uiStore'
+import { useAgents } from '@/hooks/useAgents'
 import { AgentCard } from '@/components/agents/AgentCard'
 import { Button } from '@/components/ui/Button'
+import { stopAgent, patchAgent } from '@/api/agents'
+import { useQueryClient } from '@tanstack/react-query'
 
 export function AgentsPage() {
-  const { agents, agentOrder, removeAgent, updateAgentStatus } = useAgentStore()
-  const { openSpawnModal, openConfirmStop } = useUiStore()
+  const { agents, agentOrder, updateAgentStatus } = useAgentStore()
+  const { openSpawnModal } = useUiStore()
+  const { loading, backendOnline, refetch } = useAgents()
+  const queryClient = useQueryClient()
 
   const orderedAgents = agentOrder.map((id) => agents[id]).filter(Boolean)
 
-  const handleStop = (id: string) => {
-    openConfirmStop(id)
-    // For mock: immediately stop
-    updateAgentStatus(id, 'stopped')
+  const handleStop = async (id: string) => {
+    try {
+      await stopAgent(id)
+      updateAgentStatus(id, 'stopped')
+      queryClient.invalidateQueries({ queryKey: ['agents'] })
+    } catch {
+      updateAgentStatus(id, 'stopped')
+    }
   }
 
-  const handlePause = (id: string) => {
+  const handlePause = async (id: string) => {
     const agent = agents[id]
     if (!agent) return
-    if (agent.status === 'running') updateAgentStatus(id, 'idle')
-    else if (agent.status === 'idle') updateAgentStatus(id, 'running')
+    const action = agent.status === 'running' ? 'pause' : 'resume'
+    const nextStatus = action === 'pause' ? 'idle' : 'running'
+    try {
+      await patchAgent(id, action)
+      updateAgentStatus(id, nextStatus)
+    } catch {
+      updateAgentStatus(id, nextStatus)
+    }
   }
 
   return (
@@ -32,11 +47,19 @@ export function AgentsPage() {
           <p className="text-xs text-text-secondary mt-0.5">
             {orderedAgents.length} agent{orderedAgents.length !== 1 ? 's' : ''} &mdash;&nbsp;
             {orderedAgents.filter((a) => a.status === 'running').length} running
+            {!backendOnline && (
+              <span className="ml-2 text-yellow-400 inline-flex items-center gap-1">
+                <WifiOff size={10} /> mock data
+              </span>
+            )}
           </p>
         </div>
-        <Button variant="primary" size="sm" icon={<Plus size={13} />} onClick={openSpawnModal}>
-          New Agent
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" icon={<RefreshCw size={12} className={loading ? 'animate-spin' : ''} />} onClick={() => refetch()} />
+          <Button variant="primary" size="sm" icon={<Plus size={13} />} onClick={openSpawnModal}>
+            New Agent
+          </Button>
+        </div>
       </div>
 
       {/* Grid */}

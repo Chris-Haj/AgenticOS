@@ -1,7 +1,10 @@
-import { Plus, Activity, Database, Cpu } from 'lucide-react'
+import { Plus, Activity, Database, Cpu, Server } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useUiStore } from '@/store/uiStore'
 import { useSystemStore } from '@/store/systemStore'
 import { useAgentStore } from '@/store/agentStore'
+import { useAgents } from '@/hooks/useAgents'
+import { fetchObsidianStatus } from '@/api/agents'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/utils/cn'
 
@@ -22,11 +25,32 @@ export function StatusBar() {
   const { status } = useSystemStore()
   const { agents } = useAgentStore()
 
+  const { backendOnline } = useAgents()
   const runningCount = Object.values(agents).filter((a) => a.status === 'running').length
   const errorCount   = Object.values(agents).filter((a) => a.status === 'error').length
   const totalCount   = Object.values(agents).length
 
   const syncStatus = status?.memorySyncStatus ?? 'disconnected'
+
+  const { data: obsidian } = useQuery({
+    queryKey: ['obsidian-status'],
+    queryFn: fetchObsidianStatus,
+    refetchInterval: 15_000,
+    retry: false,
+    enabled: backendOnline,
+  })
+
+  const obsidianColor = !obsidian || !obsidian.enabled
+    ? 'text-text-dim'
+    : obsidian.connected
+      ? 'text-green-vivid'
+      : 'text-yellow-500'
+
+  const obsidianLabel = !obsidian || !obsidian.enabled
+    ? 'not configured'
+    : obsidian.connected
+      ? 'connected'
+      : 'offline'
 
   return (
     <header
@@ -59,10 +83,17 @@ export function StatusBar() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Database size={13} className="text-text-dim" />
+          <Server size={13} className={backendOnline ? 'text-green-vivid' : 'text-text-dim'} />
+          <span className={cn('text-xs font-mono', backendOnline ? 'text-green-vivid' : 'text-text-dim')}>
+            {backendOnline ? 'Backend online' : 'No backend — mock data'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Database size={13} className={obsidianColor} />
           <span className="text-xs font-mono text-text-dim">Obsidian</span>
           <span className="text-xs font-mono text-text-dim">—</span>
-          <span className="text-xs font-mono text-yellow-600">not connected</span>
+          <span className={cn('text-xs font-mono', obsidianColor)}>{obsidianLabel}</span>
         </div>
       </div>
 
